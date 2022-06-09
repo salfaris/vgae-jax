@@ -9,15 +9,16 @@ def node_update_fn(feats: jnp.ndarray) -> jnp.ndarray:
   net = hk.Sequential([hk.Linear(128), jax.nn.relu, hk.Linear(64)])
   return net(feats)
 
-def net_fn(graph: jraph.GraphsTuple) -> jraph.GraphsTuple:
-  """Network definition."""
+def vgae_encoder(graph: jraph.GraphsTuple) -> jraph.GraphsTuple:
+  """VGAE network definition."""
   graph = graph._replace(globals=jnp.zeros([graph.n_node.shape[0], 1]))
   net = jraph.GraphNetwork(
       update_node_fn=node_update_fn, update_edge_fn=None, update_global_fn=None)
-  return net(graph)
+  h = net(graph)
+  mean, log_std = net(h), net(h)
+  return mean, log_std
 
-
-def decode(pred_graph: jraph.GraphsTuple, senders: jnp.ndarray,
+def vgae_decode(z: jnp.ndarray, senders: jnp.ndarray,
            receivers: jnp.ndarray) -> jnp.ndarray:
   """Given a set of candidate edges, take dot product of respective nodes.
 
@@ -31,4 +32,28 @@ def decode(pred_graph: jraph.GraphsTuple, senders: jnp.ndarray,
 
   """
   return jnp.squeeze(
-      jnp.sum(pred_graph.nodes[senders] * pred_graph.nodes[receivers], axis=1))
+      jnp.sum(z[senders] * z[receivers], axis=1))
+
+
+def gae_encoder(graph: jraph.GraphsTuple) -> jraph.GraphsTuple:
+  """GAE network definition."""
+  graph = graph._replace(globals=jnp.zeros([graph.n_node.shape[0], 1]))
+  net = jraph.GraphNetwork(
+      update_node_fn=node_update_fn, update_edge_fn=None, update_global_fn=None)
+  return net(graph)
+  
+def gae_decode(pred_graph_nodes: jnp.ndarray, senders: jnp.ndarray,
+           receivers: jnp.ndarray) -> jnp.ndarray:
+  """Given a set of candidate edges, take dot product of respective nodes.
+
+  Args:
+    pred_graph: input graph.
+    senders: Senders of candidate edges.
+    receivers: Receivers of candidate edges.
+
+  Returns:
+    For each edge, computes dot product of the features of the two nodes.
+
+  """
+  return jnp.squeeze(
+      jnp.sum(pred_graph_nodes[senders] * pred_graph_nodes[receivers], axis=1))
