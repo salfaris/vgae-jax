@@ -6,16 +6,12 @@ import optax
 from sklearn.metrics import roc_auc_score
 from absl import app, flags, logging
 
-# from jax.config import config
-# config.update("jax_debug_nans", True)
-
 import functools
-from typing import Tuple, List, Dict, Any
+from typing import List, Dict, Any
 
-from model import gae_encoder, gae_decode, vgae_encoder, vgae_decode
-from dataset import load_dataset, train_val_test_split_edges
-from loss import compute_bce_with_logits_loss, compute_kl_gaussian
-from utils import negative_sampling
+from model import gae_encoder, vgae_encoder
+from loss import compute_vgae_loss, compute_gae_loss
+from dataset import load_dataset, train_val_test_split_edges, negative_sampling
 
 flags.DEFINE_float('learning_rate', 1e-2, 'Learning rate for the optimizer.')
 flags.DEFINE_integer('epochs', 200, 'Number of training epochs.')
@@ -25,38 +21,6 @@ flags.DEFINE_bool('is_vgae', True, 'Using Variational GAE vs vanilla GAE.')
 flags.DEFINE_integer('hidden_dim', 32, 'Hidden dimension in the AE.')
 flags.DEFINE_integer('latent_dim', 16, 'Latent dimension in the AE.')
 FLAGS = flags.FLAGS
-
-def compute_gae_loss(params: hk.Params, graph: jraph.GraphsTuple,
-                 senders: jnp.ndarray, receivers: jnp.ndarray,
-                 labels: jnp.ndarray,
-                 net: hk.Transformed) -> Tuple[jnp.ndarray, jnp.ndarray]:
-  """Computes GAE loss."""
-  pred_graph = net.apply(params, graph)
-  logits = gae_decode(pred_graph.nodes, senders, receivers)
-  loss = compute_bce_with_logits_loss(logits, labels)
-  return loss, logits
-
-
-def compute_vgae_loss(params: hk.Params, graph: jraph.GraphsTuple,
-                 senders: jnp.ndarray, receivers: jnp.ndarray,
-                 labels: jnp.ndarray,
-                 net: hk.Transformed, 
-                 rng_key: jnp.ndarray) -> Tuple[jnp.ndarray, jnp.ndarray]:
-  """Computes VGAE loss."""
-  mean_graph, log_std_graph = net.apply(params, graph)
-  
-  mean, log_std = mean_graph.nodes, log_std_graph.nodes
-  eps = jax.random.normal(rng_key, mean.shape)
-  z = mean + eps * jnp.exp(log_std)
-  logits = vgae_decode(z, senders, receivers)
-  
-  n_node = z.shape[0]
-  kld = 1/n_node * jnp.mean(compute_kl_gaussian(mean, log_std), axis=-1)
-  log_likelihood = compute_bce_with_logits_loss(logits, labels)
-  
-  loss = log_likelihood + kld  # want to maximize this quantity.
-  return loss, logits
-
 
 def compute_roc_auc_score(preds: jnp.ndarray,
                           labels: jnp.ndarray) -> jnp.ndarray:
@@ -104,9 +68,6 @@ def train(dataset: List[Dict[str, Any]]) -> hk.Params:
     loss_fn = compute_gae_loss
   compute_loss_fn = functools.partial(loss_fn, net=net)
   # We jit the computation of our loss, since this is the main computation.
-  # Using jax.jit means that we will use a single accelerator. If you want
-  # to use more than 1 accelerator, use jax.pmap. More information can be
-  # found in the jax documentation.
   compute_loss_fn = jax.jit(jax.value_and_grad(compute_loss_fn, has_aux=True))
 
   key, *neg_sampling_keys = jax.random.split(key, FLAGS.epochs+1)
@@ -147,7 +108,6 @@ def train(dataset: List[Dict[str, Any]]) -> hk.Params:
 def main(_):
     cora_ds = load_dataset('./dataset/cora.pickle')
     _ = train(cora_ds)
-
 
 if __name__ == '__main__':
     app.run(main)

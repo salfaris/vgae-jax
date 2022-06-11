@@ -1,4 +1,43 @@
+import jax
 import jax.numpy as jnp
+import haiku as hk
+import jraph
+
+from typing import Tuple
+
+from model import vgae_decode, gae_decode
+
+def compute_vgae_loss(params: hk.Params, graph: jraph.GraphsTuple,
+                 senders: jnp.ndarray, receivers: jnp.ndarray,
+                 labels: jnp.ndarray,
+                 net: hk.Transformed, 
+                 rng_key: jnp.ndarray) -> Tuple[jnp.ndarray, jnp.ndarray]:
+  """Computes VGAE loss."""
+  mean_graph, log_std_graph = net.apply(params, graph)
+  
+  mean, log_std = mean_graph.nodes, log_std_graph.nodes
+  eps = jax.random.normal(rng_key, mean.shape)
+  z = mean + eps * jnp.exp(log_std)
+  logits = vgae_decode(z, senders, receivers)
+  
+  n_node = z.shape[0]
+  kld = 1/n_node * jnp.mean(compute_kl_gaussian(mean, log_std), axis=-1)
+  log_likelihood = compute_bce_with_logits_loss(logits, labels)
+  
+  loss = log_likelihood + kld  # want to maximize this quantity.
+  return loss, logits
+
+
+def compute_gae_loss(params: hk.Params, graph: jraph.GraphsTuple,
+                 senders: jnp.ndarray, receivers: jnp.ndarray,
+                 labels: jnp.ndarray,
+                 net: hk.Transformed) -> Tuple[jnp.ndarray, jnp.ndarray]:
+  """Computes GAE loss."""
+  pred_graph = net.apply(params, graph)
+  logits = gae_decode(pred_graph.nodes, senders, receivers)
+  loss = compute_bce_with_logits_loss(logits, labels)
+  return loss, logits
+
 
 def compute_bce_with_logits_loss(x: jnp.ndarray, y: jnp.ndarray) -> jnp.ndarray:
   """Computes binary cross-entropy with logits loss.
@@ -17,6 +56,7 @@ def compute_bce_with_logits_loss(x: jnp.ndarray, y: jnp.ndarray) -> jnp.ndarray:
   max_val = jnp.clip(-x, 0, None)
   loss = x - x*y + max_val + jnp.log(jnp.exp(-max_val) + jnp.exp((-x-max_val)))
   return jnp.mean(loss, axis=-1)
+
 
 def compute_weighted_bce_with_logits_loss(
   x: jnp.ndarray, y: jnp.ndarray, weight: jnp.ndarray) -> jnp.ndarray:
