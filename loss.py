@@ -1,10 +1,4 @@
-import jax
 import jax.numpy as jnp
-import haiku as hk
-import jraph
-from sklearn.metrics import roc_auc_score
-
-from typing import Tuple
 
 def compute_bce_with_logits_loss(x: jnp.ndarray, y: jnp.ndarray) -> jnp.ndarray:
   """Computes binary cross-entropy with logits loss.
@@ -45,20 +39,19 @@ def compute_weighted_bce_with_logits_loss(
   return jnp.mean(loss, axis=-1)
 
 
-def compute_kl_gaussian(mean: jnp.ndarray, log_var: jnp.ndarray) -> jnp.ndarray:
+def compute_kl_gaussian(mean: jnp.ndarray, log_std: jnp.ndarray) -> jnp.ndarray:
     r"""Calculate KL divergence between given and standard gaussian distributions.
 
-    KL(p, q) = H(p, q) - H(p) = -\int p(x)log(q(x))dx - -\int p(x)log(p(x))dx
-            = 0.5 * [log(|s2|/|s1|) - 1 + tr(s1/s2) + (m1-m2)^2/s2]
-            = 0.5 * [-log(|s1|) - 1 + tr(s1) + m1^2] (if m2 = 0, s2 = 1)
-
     Args:
-        mean: mean vector of the first distribution
-        log_var: diagonal vector of log-covariance matrix of the first distribution
+        mean: feature matrix of the mean.
+        log_std: feature matrix of the log-covariance.
 
     Returns:
-        A scalar representing KL divergence of the two Gaussian distributions.
+        A vector representing KL divergence of the two Gaussian distributions
+        of length |V| where V is the nodes in the graph.
     """
-    return 0.5 * jnp.sum(-log_var - 1.0 + jnp.exp(log_var) + jnp.square(mean), axis=-1)
+    var = jnp.exp(log_std)
+    return 0.5 * jnp.sum(
+      -2*log_std - 1.0 + jnp.square(var) + jnp.square(mean), axis=-1)
   
   
