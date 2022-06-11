@@ -42,17 +42,17 @@ def compute_vgae_loss(params: hk.Params, graph: jraph.GraphsTuple,
                  net: hk.Transformed) -> Tuple[jnp.ndarray, jnp.ndarray]:
   """Computes VGAE loss."""
   mean_graph, log_std_graph = net.apply(params, graph)
+  
   mean, log_std = mean_graph.nodes, log_std_graph.nodes
   eps = jax.random.normal(jax.random.PRNGKey(FLAGS.random_seed), mean.shape)
   z = mean + eps * jnp.exp(log_std)
-  
   logits = vgae_decode(z, senders, receivers)
   
   n_node = z.shape[0]
-  kld = 1/n_node * jnp.mean(compute_kl_gaussian(mean, log_std**2), axis=-1)
+  kld = 1/n_node * jnp.mean(compute_kl_gaussian(mean, log_std), axis=-1)
   log_likelihood = compute_bce_with_logits_loss(logits, labels)
   
-  loss = log_likelihood + kld
+  loss = log_likelihood + kld  # want to maximize this quantity.
   return loss, logits
 
 
