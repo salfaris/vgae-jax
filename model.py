@@ -3,19 +3,41 @@ import jax.numpy as jnp
 import haiku as hk
 import jraph
 
-@jraph.concatenated_args
-def node_update_fn(feats: jnp.ndarray) -> jnp.ndarray:
-  """Node update function for graph net."""
-  net = hk.Sequential([hk.Linear(128), jax.nn.relu, hk.Linear(64)])
-  return net(feats)
+from typing import Tuple
 
-def vgae_encoder(graph: jraph.GraphsTuple) -> jraph.GraphsTuple:
+HIDDEN_DIM: int = 32
+LATENT_DIM: int = 16
+
+def vgae_encoder(
+  graph: jraph.GraphsTuple) -> Tuple[jraph.GraphsTuple, jraph.GraphsTuple]:
   """VGAE network definition."""
   graph = graph._replace(globals=jnp.zeros([graph.n_node.shape[0], 1]))
-  net = jraph.GraphNetwork(
-      update_node_fn=node_update_fn, update_edge_fn=None, update_global_fn=None)
-  h = net(graph)
-  mean, log_std = net(h), net(h)
+  
+  @jraph.concatenated_args
+  def hidden_node_update_fn(feats: jnp.ndarray) -> jnp.ndarray:
+    """Node update function for graph net."""
+    net = hk.Sequential([hk.Linear(HIDDEN_DIM), jax.nn.relu])
+    return net(feats)
+
+  @jraph.concatenated_args
+  def latent_node_update_fn(feats: jnp.ndarray) -> jnp.ndarray:
+    """Node update function for graph net."""
+    return hk.Linear(LATENT_DIM)(feats)
+
+  net_hidden = jraph.GraphConvolution(
+    update_node_fn=hidden_node_update_fn,
+    add_self_edges=True
+  )
+  h = net_hidden(graph)
+  net_mean = jraph.GraphConvolution(
+    update_node_fn=latent_node_update_fn,
+    add_self_edges=True
+  )
+  net_log_std = jraph.GraphConvolution(
+    update_node_fn=latent_node_update_fn,
+    add_self_edges=True
+  )
+  mean, log_std = net_mean(h), net_log_std(h)
   return mean, log_std
 
 def vgae_decode(z: jnp.ndarray, senders: jnp.ndarray,
@@ -33,11 +55,17 @@ def vgae_decode(z: jnp.ndarray, senders: jnp.ndarray,
   """
   return jnp.squeeze(
       jnp.sum(z[senders] * z[receivers], axis=1))
-
+  
 
 def gae_encoder(graph: jraph.GraphsTuple) -> jraph.GraphsTuple:
   """GAE network definition."""
   graph = graph._replace(globals=jnp.zeros([graph.n_node.shape[0], 1]))
+  
+  @jraph.concatenated_args
+  def node_update_fn(feats: jnp.ndarray) -> jnp.ndarray:
+    net = hk.Sequential([hk.Linear(HIDDEN_DIM), jax.nn.relu, hk.Linear(LATENT_DIM)])
+    return net(feats)
+  
   net = jraph.GraphNetwork(
       update_node_fn=node_update_fn, update_edge_fn=None, update_global_fn=None)
   return net(graph)
