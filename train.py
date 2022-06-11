@@ -1,25 +1,28 @@
-from chex import PRNGKey
 import jax
 import jax.numpy as jnp
 import haiku as hk
 import jraph
 import optax
+from sklearn.covariance import log_likelihood
 from sklearn.metrics import roc_auc_score
 from absl import app, flags, logging
+
+# from jax.config import config
+# config.update("jax_debug_nans", True)
 
 import functools
 from typing import Tuple, List, Dict, Any
 
 from model import gae_encoder, gae_decode, vgae_encoder, vgae_decode
 from dataset import load_dataset, train_val_test_split_edges
-from metrics import compute_bce_with_logits_loss
-from helper import negative_sampling
+from loss import compute_bce_with_logits_loss, compute_kl_gaussian
+from utils import negative_sampling
 
 flags.DEFINE_float('learning_rate', 1e-4, 'Learning rate for the optimizer.')
-flags.DEFINE_integer('training_epochs', 200, 'Number of training epochs.')
+flags.DEFINE_integer('epochs', 200, 'Number of training epochs.')
 flags.DEFINE_integer('eval_frequency', 10, 'How often to evaluate the model.')
 flags.DEFINE_integer('random_seed', 42, 'Random seed.')
-flags.DEFINE_bool('is_vgae', False, 'Using Variational GAE vs vanilla GAE.')
+flags.DEFINE_bool('is_vgae', True, 'Using Variational GAE vs vanilla GAE.')
 FLAGS = flags.FLAGS
 
 def compute_gae_loss(params: hk.Params, graph: jraph.GraphsTuple,
@@ -28,9 +31,10 @@ def compute_gae_loss(params: hk.Params, graph: jraph.GraphsTuple,
                  net: hk.Transformed) -> Tuple[jnp.ndarray, jnp.ndarray]:
   """Computes GAE loss."""
   pred_graph = net.apply(params, graph)
-  preds = gae_decode(pred_graph.nodes, senders, receivers)
-  loss = compute_bce_with_logits_loss(preds, labels)
-  return loss, preds
+  logits = gae_decode(pred_graph.nodes, senders, receivers)
+  loss = compute_bce_with_logits_loss(logits, labels)
+  return loss, logits
+
 
 def compute_vgae_loss(params: hk.Params, graph: jraph.GraphsTuple,
                  senders: jnp.ndarray, receivers: jnp.ndarray,
@@ -42,9 +46,14 @@ def compute_vgae_loss(params: hk.Params, graph: jraph.GraphsTuple,
   eps = jax.random.normal(jax.random.PRNGKey(FLAGS.random_seed), mean.shape)
   z = mean + eps * jnp.exp(log_std)
   
-  preds = vgae_decode(z, senders, receivers)
-  loss = compute_bce_with_logits_loss(preds, labels)
-  return loss, preds
+  logits = vgae_decode(z, senders, receivers)
+  
+  n_node = z.shape[0]
+  kld = 1/n_node * jnp.mean(compute_kl_gaussian(mean, log_std**2), axis=-1)
+  log_likelihood = compute_bce_with_logits_loss(logits, labels)
+  
+  loss = log_likelihood + kld
+  return loss, logits
 
 
 def compute_roc_auc_score(preds: jnp.ndarray,
@@ -91,7 +100,7 @@ def train(dataset: List[Dict[str, Any]]) -> hk.Params:
   # found in the jax documentation.
   compute_loss_fn = jax.jit(jax.value_and_grad(compute_loss_fn, has_aux=True))
 
-  for epoch in range(FLAGS.training_epochs):
+  for epoch in range(FLAGS.epochs):
     num_neg_samples = train_graph.senders.shape[0]
     train_neg_senders, train_neg_receivers = negative_sampling(
         train_graph, num_neg_samples=num_neg_samples, key=key)
@@ -107,7 +116,7 @@ def train(dataset: List[Dict[str, Any]]) -> hk.Params:
 
     updates, opt_state = opt_update(grad, opt_state, params)
     params = optax.apply_updates(params, updates)
-    if epoch % FLAGS.eval_frequency == 0 or epoch == (FLAGS.training_epochs - 1):
+    if epoch % FLAGS.eval_frequency == 0 or epoch == (FLAGS.epochs - 1):
       train_roc_auc = compute_roc_auc_score(train_preds, train_labels)
       val_loss, val_preds = loss_fn(params, train_graph, val_senders,
                                          val_receivers, val_labels, net)
