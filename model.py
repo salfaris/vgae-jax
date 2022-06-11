@@ -27,6 +27,7 @@ def vgae_encoder(graph: jraph.GraphsTuple,
     add_self_edges=True
   )
   h = net_hidden(graph)
+  
   net_mean = jraph.GraphConvolution(
     update_node_fn=latent_node_update_fn,
     add_self_edges=True
@@ -56,8 +57,8 @@ def vgae_decode(z: jnp.ndarray, senders: jnp.ndarray,
   
 
 def gae_encoder(graph: jraph.GraphsTuple,
-                hidden_dim: int,
-                latent_dim: int) -> jraph.GraphsTuple:
+                hidden_dim: int = 32,
+                latent_dim: int = 16) -> jraph.GraphsTuple:
   """GAE network definition."""
   graph = graph._replace(globals=jnp.zeros([graph.n_node.shape[0], 1]))
   
@@ -66,8 +67,9 @@ def gae_encoder(graph: jraph.GraphsTuple,
     net = hk.Sequential([hk.Linear(hidden_dim), jax.nn.relu, hk.Linear(latent_dim)])
     return net(feats)
   
-  net = jraph.GraphNetwork(
-      update_node_fn=node_update_fn, update_edge_fn=None, update_global_fn=None)
+  net = jraph.GraphConvolution(
+    update_node_fn=node_update_fn, 
+    add_self_edges=True)
   return net(graph)
   
 def gae_decode(pred_graph_nodes: jnp.ndarray, senders: jnp.ndarray,
