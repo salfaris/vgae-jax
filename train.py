@@ -3,7 +3,6 @@ import jax.numpy as jnp
 import haiku as hk
 import jraph
 import optax
-from sklearn.covariance import log_likelihood
 from sklearn.metrics import roc_auc_score
 from absl import app, flags, logging
 
@@ -18,7 +17,7 @@ from dataset import load_dataset, train_val_test_split_edges
 from loss import compute_bce_with_logits_loss, compute_kl_gaussian
 from utils import negative_sampling
 
-flags.DEFINE_float('learning_rate', 1e-4, 'Learning rate for the optimizer.')
+flags.DEFINE_float('learning_rate', 1e-2, 'Learning rate for the optimizer.')
 flags.DEFINE_integer('epochs', 200, 'Number of training epochs.')
 flags.DEFINE_integer('eval_frequency', 10, 'How often to evaluate the model.')
 flags.DEFINE_integer('random_seed', 42, 'Random seed.')
@@ -39,12 +38,13 @@ def compute_gae_loss(params: hk.Params, graph: jraph.GraphsTuple,
 def compute_vgae_loss(params: hk.Params, graph: jraph.GraphsTuple,
                  senders: jnp.ndarray, receivers: jnp.ndarray,
                  labels: jnp.ndarray,
-                 net: hk.Transformed) -> Tuple[jnp.ndarray, jnp.ndarray]:
+                 net: hk.Transformed, 
+                 rng_key: jnp.ndarray) -> Tuple[jnp.ndarray, jnp.ndarray]:
   """Computes VGAE loss."""
   mean_graph, log_std_graph = net.apply(params, graph)
   
   mean, log_std = mean_graph.nodes, log_std_graph.nodes
-  eps = jax.random.normal(jax.random.PRNGKey(FLAGS.random_seed), mean.shape)
+  eps = jax.random.normal(rng_key, mean.shape)
   z = mean + eps * jnp.exp(log_std)
   logits = vgae_decode(z, senders, receivers)
   
@@ -87,12 +87,17 @@ def train(dataset: List[Dict[str, Any]]) -> hk.Params:
   test_labels = jnp.concatenate(
       (jnp.ones(len(test_pos_s)), jnp.zeros(len(test_neg_s))))
   # Initialize the network.
-  params = net.init(key, train_graph)
+  key, param_key = jax.random.split(key)
+  params = net.init(param_key, train_graph)
   # Initialize the optimizer.
   opt_init, opt_update = optax.adam(FLAGS.learning_rate)
   opt_state = opt_init(params)
   
-  loss_fn = compute_vgae_loss if FLAGS.is_vgae else compute_gae_loss
+  if FLAGS.is_vgae:
+    key, loss_key = jax.random.split(key)
+    loss_fn = functools.partial(compute_vgae_loss, rng_key=loss_key)
+  else:
+    loss_fn = compute_gae_loss
   compute_loss_fn = functools.partial(loss_fn, net=net)
   # We jit the computation of our loss, since this is the main computation.
   # Using jax.jit means that we will use a single accelerator. If you want
@@ -100,10 +105,11 @@ def train(dataset: List[Dict[str, Any]]) -> hk.Params:
   # found in the jax documentation.
   compute_loss_fn = jax.jit(jax.value_and_grad(compute_loss_fn, has_aux=True))
 
+  key, *neg_sampling_keys = jax.random.split(key, FLAGS.epochs+1)
   for epoch in range(FLAGS.epochs):
     num_neg_samples = train_graph.senders.shape[0]
     train_neg_senders, train_neg_receivers = negative_sampling(
-        train_graph, num_neg_samples=num_neg_samples, key=key)
+        train_graph, num_neg_samples=num_neg_samples, key=neg_sampling_keys[epoch])
     train_senders = jnp.concatenate((train_graph.senders, train_neg_senders))
     train_receivers = jnp.concatenate(
         (train_graph.receivers, train_neg_receivers))
