@@ -22,6 +22,8 @@ flags.DEFINE_integer('epochs', 200, 'Number of training epochs.')
 flags.DEFINE_integer('eval_frequency', 10, 'How often to evaluate the model.')
 flags.DEFINE_integer('random_seed', 42, 'Random seed.')
 flags.DEFINE_bool('is_vgae', True, 'Using Variational GAE vs vanilla GAE.')
+flags.DEFINE_integer('hidden_dim', 32, 'Hidden dimension in the AE.')
+flags.DEFINE_integer('latent_dim', 16, 'Latent dimension in the AE.')
 FLAGS = flags.FLAGS
 
 def compute_gae_loss(params: hk.Params, graph: jraph.GraphsTuple,
@@ -69,6 +71,8 @@ def train(dataset: List[Dict[str, Any]]) -> hk.Params:
   key = jax.random.PRNGKey(FLAGS.random_seed)
   # Transform impure network to pure functions with hk.transform.
   net_fn = vgae_encoder if FLAGS.is_vgae else gae_encoder
+  net_fn = functools.partial(
+    net_fn, hidden_dim=FLAGS.hidden_dim, latent_dim=FLAGS.latent_dim)
   net = hk.without_apply_rng(hk.transform(net_fn))
   
   # Get a candidate graph and label to initialize the network.

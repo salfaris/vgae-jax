@@ -5,24 +5,22 @@ import jraph
 
 from typing import Tuple
 
-HIDDEN_DIM: int = 32
-LATENT_DIM: int = 16
-
-def vgae_encoder(
-  graph: jraph.GraphsTuple) -> Tuple[jraph.GraphsTuple, jraph.GraphsTuple]:
+def vgae_encoder(graph: jraph.GraphsTuple,
+                 hidden_dim: int = 32,
+                 latent_dim: int = 16) -> Tuple[jraph.GraphsTuple, jraph.GraphsTuple]:
   """VGAE network definition."""
   graph = graph._replace(globals=jnp.zeros([graph.n_node.shape[0], 1]))
   
   @jraph.concatenated_args
   def hidden_node_update_fn(feats: jnp.ndarray) -> jnp.ndarray:
     """Node update function for graph net."""
-    net = hk.Sequential([hk.Linear(HIDDEN_DIM), jax.nn.relu])
+    net = hk.Sequential([hk.Linear(hidden_dim), jax.nn.relu])
     return net(feats)
 
   @jraph.concatenated_args
   def latent_node_update_fn(feats: jnp.ndarray) -> jnp.ndarray:
     """Node update function for graph net."""
-    return hk.Linear(LATENT_DIM)(feats)
+    return hk.Linear(latent_dim)(feats)
 
   net_hidden = jraph.GraphConvolution(
     update_node_fn=hidden_node_update_fn,
@@ -57,13 +55,15 @@ def vgae_decode(z: jnp.ndarray, senders: jnp.ndarray,
       jnp.sum(z[senders] * z[receivers], axis=1))
   
 
-def gae_encoder(graph: jraph.GraphsTuple) -> jraph.GraphsTuple:
+def gae_encoder(graph: jraph.GraphsTuple,
+                hidden_dim: int,
+                latent_dim: int) -> jraph.GraphsTuple:
   """GAE network definition."""
   graph = graph._replace(globals=jnp.zeros([graph.n_node.shape[0], 1]))
   
   @jraph.concatenated_args
   def node_update_fn(feats: jnp.ndarray) -> jnp.ndarray:
-    net = hk.Sequential([hk.Linear(HIDDEN_DIM), jax.nn.relu, hk.Linear(LATENT_DIM)])
+    net = hk.Sequential([hk.Linear(hidden_dim), jax.nn.relu, hk.Linear(latent_dim)])
     return net(feats)
   
   net = jraph.GraphNetwork(
