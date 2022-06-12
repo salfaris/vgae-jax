@@ -1,6 +1,6 @@
+import haiku as hk
 import jax
 import jax.numpy as jnp
-import haiku as hk
 import jraph
 
 from typing import Tuple
@@ -21,7 +21,7 @@ def compute_vgae_loss(params: hk.Params, graph: jraph.GraphsTuple,
   logits = inner_product_decode(z, senders, receivers)
   
   n_node = z.shape[0]
-  kld = 1/n_node * jnp.mean(compute_kl_gaussian(mean, log_std), axis=-1)
+  kld = 1.0/n_node * jnp.mean(compute_kl_gaussian(mean, log_std), axis=-1)
   log_likelihood = compute_bce_with_logits_loss(logits, labels)
   
   loss = log_likelihood + kld  # want to maximize this quantity.

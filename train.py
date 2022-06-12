@@ -1,7 +1,6 @@
+import haiku as hk
 import jax
 import jax.numpy as jnp
-import haiku as hk
-import jraph
 import optax
 from sklearn.metrics import roc_auc_score
 from absl import app, flags, logging
@@ -9,17 +8,17 @@ from absl import app, flags, logging
 import functools
 from typing import List, Dict, Any
 
-from model import gae_encoder, vgae_encoder
-from loss import compute_vgae_loss, compute_gae_loss
 from dataset import load_dataset, train_val_test_split_edges, negative_sampling
+from loss import compute_vgae_loss, compute_gae_loss
+from model import gae_encoder, vgae_encoder
 
 flags.DEFINE_float('learning_rate', 1e-2, 'Learning rate for the optimizer.')
 flags.DEFINE_integer('epochs', 200, 'Number of training epochs.')
-flags.DEFINE_integer('eval_frequency', 10, 'How often to evaluate the model.')
-flags.DEFINE_integer('random_seed', 42, 'Random seed.')
-flags.DEFINE_bool('is_vgae', True, 'Using Variational GAE vs vanilla GAE.')
 flags.DEFINE_integer('hidden_dim', 32, 'Hidden dimension in the AE.')
 flags.DEFINE_integer('latent_dim', 16, 'Latent dimension in the AE.')
+flags.DEFINE_integer('random_seed', 42, 'Random seed.')
+flags.DEFINE_integer('eval_frequency', 10, 'How often to evaluate the model.')
+flags.DEFINE_bool('is_vgae', True, 'Using Variational GAE vs vanilla GAE.')
 FLAGS = flags.FLAGS
 
 def compute_roc_auc_score(preds: jnp.ndarray,
@@ -80,7 +79,7 @@ def train(dataset: List[Dict[str, Any]]) -> hk.Params:
         (train_graph.receivers, train_neg_receivers))
     train_labels = jnp.concatenate(
         (jnp.ones(len(train_graph.senders)), jnp.zeros(len(train_neg_senders))))
-
+  
     (train_loss,
      train_preds), grad = compute_loss_fn(params, train_graph, train_senders,
                                           train_receivers, train_labels)

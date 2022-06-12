@@ -1,6 +1,6 @@
+import haiku as hk
 import jax
 import jax.numpy as jnp
-import haiku as hk
 import jraph
 
 from typing import Tuple

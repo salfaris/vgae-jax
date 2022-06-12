@@ -1,7 +1,8 @@
 import jax
 import jax.numpy as jnp
-import numpy as onp
 import jraph
+import networkx as nx
+import numpy as onp
 
 import pickle
 from typing import Tuple
@@ -19,7 +20,7 @@ def train_val_test_split_edges(graph: jraph.GraphsTuple,
   For val and test sets, also include negative edges.
   Based on torch_geometric.utils.train_test_split_edges.
 
-  This JAX implementation is fully attributed to Lisa Wang & Nikola Jovanović:
+  JAX implementation based fully on:
   https://github.com/deepmind/educational/blob/master/colabs/summer_schools/intro_to_graph_nets_tutorial_with_jraph.ipynb
   """
   mask = graph.senders < graph.receivers
@@ -94,7 +95,7 @@ def negative_sampling(
     key: jnp.DeviceArray) -> Tuple[jnp.DeviceArray, jnp.DeviceArray]:
   """Samples negative edges, i.e. edges that don't exist in the input graph.
   
-  This JAX implementation is fully attributed to Lisa Wang & Nikola Jovanović:
+  Based fully on:
   https://github.com/deepmind/educational/blob/master/colabs/summer_schools/intro_to_graph_nets_tutorial_with_jraph.ipynb
   """
   num_nodes = graph.n_node[0]
@@ -123,3 +124,34 @@ def negative_sampling(
   neg_receivers = perm % num_nodes
 
   return neg_senders, neg_receivers
+
+def convert_jraph_to_networkx_graph(jraph_graph: jraph.GraphsTuple) -> nx.Graph:
+  """Converts a JAX GraphsTuple to a NetworkX graph.
+  
+  Based fully on: 
+  https://github.com/deepmind/educational/blob/master/colabs/summer_schools/intro_to_graph_nets_tutorial_with_jraph.ipynb
+  """
+  nodes, edges, receivers, senders, _, _, _ = jraph_graph
+  nx_graph = nx.DiGraph()
+  if nodes is None:
+    for n in range(jraph_graph.n_node[0]):
+      nx_graph.add_node(n)
+  else:
+    for n in range(jraph_graph.n_node[0]):
+      nx_graph.add_node(n, node_feature=nodes[n])
+  if edges is None:
+    for e in range(jraph_graph.n_edge[0]):
+      nx_graph.add_edge(int(senders[e]), int(receivers[e]))
+  else:
+    for e in range(jraph_graph.n_edge[0]):
+      nx_graph.add_edge(
+          int(senders[e]), int(receivers[e]), edge_feature=edges[e])
+  return nx_graph
+
+def compute_norm_and_weights(graph: jraph.GraphsTuple) -> Tuple[float, float]:
+  graph_n_node = graph.n_node.item()
+  graph_adj = nx.to_numpy_matrix(convert_jraph_to_networkx_graph(graph))
+  adj_sum = onp.sum(graph_adj)
+  pos_weight = float(graph_n_node**2 - adj_sum) / adj_sum
+  norm_adj = graph_n_node**2 / 2.0*(graph_n_node**2 - adj_sum)
+  return pos_weight, norm_adj
