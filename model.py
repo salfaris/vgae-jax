@@ -13,13 +13,13 @@ def vgae_encoder(graph: jraph.GraphsTuple,
   
   @jraph.concatenated_args
   def hidden_node_update_fn(feats: jnp.ndarray) -> jnp.ndarray:
-    """Node update function for graph net."""
+    """Node update function for hidden layer."""
     net = hk.Sequential([hk.Linear(hidden_dim), jax.nn.relu])
     return net(feats)
 
   @jraph.concatenated_args
   def latent_node_update_fn(feats: jnp.ndarray) -> jnp.ndarray:
-    """Node update function for graph net."""
+    """Node update function for latent layer."""
     return hk.Linear(latent_dim)(feats)
 
   net_hidden = jraph.GraphConvolution(
@@ -38,22 +38,6 @@ def vgae_encoder(graph: jraph.GraphsTuple,
   )
   mean, log_std = net_mean(h), net_log_std(h)
   return mean, log_std
-
-def vgae_decode(z: jnp.ndarray, senders: jnp.ndarray,
-           receivers: jnp.ndarray) -> jnp.ndarray:
-  """Given a set of candidate edges, take dot product of respective nodes.
-
-  Args:
-    pred_graph: input graph.
-    senders: Senders of candidate edges.
-    receivers: Receivers of candidate edges.
-
-  Returns:
-    For each edge, computes dot product of the features of the two nodes.
-
-  """
-  return jnp.squeeze(
-      jnp.sum(z[senders] * z[receivers], axis=1))
   
 
 def gae_encoder(graph: jraph.GraphsTuple,
@@ -71,13 +55,14 @@ def gae_encoder(graph: jraph.GraphsTuple,
     update_node_fn=node_update_fn, 
     add_self_edges=True)
   return net(graph)
-  
-def gae_decode(pred_graph_nodes: jnp.ndarray, senders: jnp.ndarray,
+
+
+def inner_product_decode(pred_graph_nodes: jnp.ndarray, senders: jnp.ndarray,
            receivers: jnp.ndarray) -> jnp.ndarray:
   """Given a set of candidate edges, take dot product of respective nodes.
 
   Args:
-    pred_graph: input graph.
+    pred_graph_nodes: input graph nodes Z.
     senders: Senders of candidate edges.
     receivers: Receivers of candidate edges.
 
