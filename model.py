@@ -6,8 +6,8 @@ import jraph
 from typing import Tuple
 
 def vgae_encoder(graph: jraph.GraphsTuple,
-                 hidden_dim: int = 32,
-                 latent_dim: int = 16) -> Tuple[jraph.GraphsTuple, jraph.GraphsTuple]:
+                 hidden_dim: int,
+                 latent_dim: int) -> Tuple[jraph.GraphsTuple, jraph.GraphsTuple]:
   """VGAE network definition."""
   graph = graph._replace(globals=jnp.zeros([graph.n_node.shape[0], 1]))
   
@@ -57,8 +57,8 @@ def vgae_decode(z: jnp.ndarray, senders: jnp.ndarray,
   
 
 def gae_encoder(graph: jraph.GraphsTuple,
-                hidden_dim: int = 32,
-                latent_dim: int = 16) -> jraph.GraphsTuple:
+                hidden_dim: int,
+                latent_dim: int) -> jraph.GraphsTuple:
   """GAE network definition."""
   graph = graph._replace(globals=jnp.zeros([graph.n_node.shape[0], 1]))
   
