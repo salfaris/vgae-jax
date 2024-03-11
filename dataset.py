@@ -64,7 +64,7 @@ def train_val_test_split_edges(graph: jraph.GraphsTuple,
   # upper triangular part
   neg_adj_mask = onp.triu(neg_adj_mask, k=1)
   neg_adj_mask[graph.senders, graph.receivers] = 0
-  neg_adj_mask = neg_adj_mask.astype(onp.bool)
+  neg_adj_mask = neg_adj_mask.astype(bool)
   neg_senders, neg_receivers = neg_adj_mask.nonzero()
 
   perm = onp.random.permutation(range(len(neg_senders)))
@@ -92,7 +92,7 @@ def train_val_test_split_edges(graph: jraph.GraphsTuple,
 
 def negative_sampling(
     graph: jraph.GraphsTuple, num_neg_samples: int,
-    key: jnp.DeviceArray) -> Tuple[jnp.DeviceArray, jnp.DeviceArray]:
+    key: jax.Array) -> Tuple[jax.Array, jax.Array]:
   """Samples negative edges, i.e. edges that don't exist in the input graph.
   
   Based fully on:
